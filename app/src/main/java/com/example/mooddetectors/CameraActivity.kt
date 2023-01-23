@@ -263,7 +263,7 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2 {
                 val maxIndex = output[0].indices.maxBy { output[0][it] }!!
                 val emotionLabels = arrayOf("angry", "disgust", "fear", "happy", "sad", "surprise", "neutral")
                 val emotion = emotionLabels[maxIndex]
-                Imgproc.putText(mRGBA, "Sentiment: $emotion", Point(rect.x.toDouble(), (rect.y + rect.height + 40).toDouble()), Imgproc.FONT_HERSHEY_SIMPLEX, 1.0, Scalar(255.0, 255.0, 0.0))
+                Imgproc.putText(mRGBA, "Mood: $emotion", Point(rect.x.toDouble(), (rect.y + rect.height + 40).toDouble()), Imgproc.FONT_HERSHEY_SIMPLEX, 1.0, Scalar(255.0, 255.0, 0.0))
 
             }
         } catch (e: Exception) {
