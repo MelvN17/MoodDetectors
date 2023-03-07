@@ -224,7 +224,7 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2 {
 
     fun recognizeFacialExpression(image: Mat): Mat {
         //we flip the image by 90 degrees for proper alignment
-        Core.flip(image.t(),image,1)
+        //Core.flip(image.t(),image,1)
 
         //convert to grey
         var greyImage: Mat = Mat()
@@ -244,70 +244,77 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2 {
 
         // now convert it to array
         // now convert it to array
-        val faceDetections = faces.toArray()
+        if (!faces.empty()) {
+            val faceDetections = faces.toArray()
+            try {
+                //optimization step, using a reusable scalar instead of creating it everytime we draw a rectangle
+                val rectangleColor = Scalar(255.0, 0.0, 0.0)
+                val textColor = Scalar(255.0, 0.0, 0.0)
+                val rectangleThickness = 2
 
-        try {
-            //optimization step, using a reusable scalar instead of creating it everytime we draw a rectangle
-            val rectangleColor = Scalar(255.0, 0.0, 0.0)
-            val textColor = Scalar(255.0, 0.0, 0.0)
-            val rectangleThickness = 2
+                val emotionLabels = arrayOf("angry", "disgust", "fear", "happy", "sad", "surprise", "neutral")
 
-            val emotionLabels = arrayOf("angry", "disgust", "fear", "happy", "sad", "surprise", "neutral")
+                for (rect:Rect in faceDetections) {
+                    //draw rectangle
+                    Imgproc.rectangle(image, Point(rect.x.toDouble(), rect.y.toDouble()), Point((rect.x + rect.width).toDouble(), (rect.y + rect.height).toDouble()), rectangleColor, rectangleThickness)
 
-            for (rect:Rect in faceDetections) {
-                //draw rectangle
-                Imgproc.rectangle(image, Point(rect.x.toDouble(), rect.y.toDouble()), Point((rect.x + rect.width).toDouble(), (rect.y + rect.height).toDouble()), rectangleColor, rectangleThickness)
+                    //crop the images
+                    val roiGray = greyImage!!.submat(rect.y  , rect.y + rect.height , rect.x , rect.x + rect.width )
 
-                //crop the images
-                val roiGray = greyImage!!.submat(rect.y - 5, rect.y + rect.height + 5, rect.x - 5, rect.x + rect.width + 5)
+                    //convert to bitmap
+                    val bmp = Bitmap.createBitmap(
+                        roiGray.cols(),
+                        roiGray.rows(),
+                        Bitmap.Config.ARGB_8888
+                    )
+                    if (bmp.width != roiGray.width() || bmp.height != roiGray.height()) {
+                        throw RuntimeException("Bitmap dimensions do not match matrix dimensions")
+                    }
+                    Utils.matToBitmap(roiGray, bmp)
 
-                //convert to bitmap
-                val bmp = Bitmap.createBitmap(
-                    roiGray.cols(),
-                    roiGray.rows(),
-                    Bitmap.Config.ARGB_8888
-                )
+                    //resize bmp to 48 by 48 (our model's input size)
+                    val scaledBitmap = Bitmap.createScaledBitmap(bmp, 48, 48, false)
 
-                Utils.matToBitmap(roiGray, bmp)
-
-                //resize bmp to 48 by 48 (our model's input size)
-                val scaledBitmap = Bitmap.createScaledBitmap(bmp, 48, 48, false)
-
-                //convert bitmap to byte array*
-                val byteBuffer = ByteBuffer.allocateDirect(4*1*48*48*1)
-                byteBuffer.order(ByteOrder.nativeOrder())
-                val intValue = IntArray(48*48)
-                scaledBitmap.getPixels(intValue, 0, scaledBitmap.width, 0, 0, scaledBitmap.width,scaledBitmap.height)
-                var pixel = 0
-                for (i in 0 until 48) {
-                    for (j in 0 until 48) {
-                        val value: Int = intValue[pixel++]
-                        //normalize image
+                    //convert bitmap to byte array*
+                    val byteBuffer = ByteBuffer.allocateDirect(4*1*48*48*1)
+                    byteBuffer.order(ByteOrder.nativeOrder())
+                    val intValue = IntArray(48*48)
+                    scaledBitmap.getPixels(intValue, 0, scaledBitmap.width, 0, 0, scaledBitmap.width,scaledBitmap.height)
+                    var pixel = 0
+                    for (i in 0 until 48) {
+                        for (j in 0 until 48) {
+                            val value: Int = intValue[pixel++]
+                            //normalize image
 //                        byteBuffer.putFloat((value shr 16 and 0xFF) / 255.0f)
 //                        byteBuffer.putFloat((value shr 8 and 0xFF) / 255.0f)
-                        byteBuffer.putFloat((value and 0xFF) / 255.0f)
+                            byteBuffer.putFloat((value and 0xFF) / 255.0f)
+                        }
                     }
+
+                    val output = Array(1) {
+                        FloatArray(
+                            7
+                        )
+                    }
+
+                    //run the model
+                    interpreter!!.run(byteBuffer, output)
+
+                    val maxIndex = output[0].indices.maxBy { output[0][it] }!!
+                    val emotion = emotionLabels[maxIndex]
+                    Imgproc.putText(image, "Mood: $emotion", Point(rect.x.toDouble(), (rect.y + rect.height + 40).toDouble()), Imgproc.FONT_HERSHEY_SIMPLEX, 1.0, textColor)
+
                 }
 
-                val output = Array(1) {
-                    FloatArray(
-                        7
-                    )
-                }
 
-                //run the model
-                interpreter!!.run(byteBuffer, output)
-
-                val maxIndex = output[0].indices.maxBy { output[0][it] }!!
-                val emotion = emotionLabels[maxIndex]
-                Imgproc.putText(image, "Mood: $emotion", Point(rect.x.toDouble(), (rect.y + rect.height + 40).toDouble()), Imgproc.FONT_HERSHEY_SIMPLEX, 1.0, textColor)
-
+            } catch (e: Exception) {
+                Log.e("ERRORRR: ", e.stackTraceToString())
             }
 
-
-        } catch (e: Exception) {
-            Log.e("ERRORRR: ", e.stackTraceToString())
         }
+
+
+
 
 
         return image;
