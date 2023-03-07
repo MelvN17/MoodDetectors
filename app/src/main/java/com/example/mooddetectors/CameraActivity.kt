@@ -15,6 +15,7 @@ import org.opencv.core.*
 import org.opencv.imgproc.Imgproc
 import org.opencv.objdetect.CascadeClassifier
 import org.tensorflow.lite.Interpreter
+import org.tensorflow.lite.gpu.GpuDelegate
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -32,13 +33,15 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2 {
     var cascadefile: File? = null
     var model: ByteBuffer? = null
     var interpreter: Interpreter? = null
+    var gpuDelegate: GpuDelegate? = null
     //var face_haar_cascade = CascadeClassifier("haarcascade_frontalface_default.xml")
     var faceDetector: CascadeClassifier? = null
     var cameraBridgeViewBase: CameraBridgeViewBase? = null
     var quit: Boolean = false
     var mRGBA: Mat? = null
     var mGrey: Mat? = null
-
+    var height: Int? = null
+    var width: Int? = null
 
     //FPS log variables
     private var frameCount = 0
@@ -115,7 +118,14 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2 {
                         val startOffset = fileDescriptor.startOffset
                         val declaredLength = fileDescriptor.declaredLength
                         model = fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
-                        interpreter = Interpreter(model!!)
+                        //TODO: add gpu delegate
+                        var options: Interpreter.Options = Interpreter.Options()
+                        gpuDelegate = GpuDelegate()
+                        options.addDelegate(gpuDelegate)
+                        options.setNumThreads(4)
+                        interpreter = Interpreter(model!!, options)
+
+
                         Log.d("onManagerConnected", "Cascade file loaded successfully")
                     } catch (e: Exception) {
                         // handle exception here
@@ -198,7 +208,7 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2 {
     }
 
     override fun onCameraViewStarted(width: Int, height: Int) {
-        mRGBA = Mat()
+        mRGBA = Mat(height, width, CvType.CV_8UC4)
         mGrey = Mat(height, width, CvType.CV_8UC1)
 //        frame = Mat(height, width, CvType.CV_8UC4)
 //        cameraBridgeViewBase!!.enableFpsMeter()
@@ -212,26 +222,57 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2 {
 
     }
 
-    override fun onCameraFrame(inputFrame: CameraBridgeViewBase.CvCameraViewFrame): Mat {
-        mRGBA = inputFrame.rgba()
+    fun recognizeFacialExpression(image: Mat): Mat {
+        //we flip the image by 90 degrees for proper alignment
+        Core.flip(image.t(),image,1)
 
-        mGrey = inputFrame.gray()
-        Core.flip(mRGBA!!.t(),mRGBA,1);
-        Core.flip(mGrey!!.t(),mGrey,1);
-        //detect faces and predict
-        var faceDetections: MatOfRect = MatOfRect()
-        faceDetector!!.detectMultiScale(mGrey, faceDetections)
+        //convert to grey
+        var greyImage: Mat = Mat()
+        Imgproc.cvtColor(image, greyImage, Imgproc.COLOR_RGBA2GRAY)
+
+        //set height and width of the image
+        height = greyImage.height()
+        width = greyImage.width()
+
+        var minFaceSize: Double = height!!*0.1
+        val faces: MatOfRect = MatOfRect()
+        if(faceDetector != null){
+            //detect the face in the current frame
+
+            faceDetector!!.detectMultiScale(greyImage, faces, 1.1, 2, 2, Size(minFaceSize, minFaceSize), Size())
+        }
+
+        // now convert it to array
+        // now convert it to array
+        val faceDetections = faces.toArray()
 
         try {
-            for (rect:Rect in faceDetections.toArray()) {
-                Imgproc.rectangle(mRGBA, Point(rect.x.toDouble(), rect.y.toDouble()), Point((rect.x + rect.width).toDouble(), (rect.y + rect.height).toDouble()), Scalar(255.0, 0.0, 0.0), 2)
-                val roiGray = mGrey!!.submat(rect.y - 5, rect.y + rect.height + 5, rect.x - 5, rect.x + rect.width + 5)
-//                Imgproc.resize(roiGray, roiGray, Size(48.0, 48.0))
-                val imagePixels = roiGray
-                val bmp = Bitmap.createBitmap(imagePixels.cols(), imagePixels.rows(), Bitmap.Config.ARGB_8888)
+            //optimization step, using a reusable scalar instead of creating it everytime we draw a rectangle
+            val rectangleColor = Scalar(255.0, 0.0, 0.0)
+            val textColor = Scalar(255.0, 0.0, 0.0)
+            val rectangleThickness = 2
 
-                Utils.matToBitmap(imagePixels, bmp)
+            val emotionLabels = arrayOf("angry", "disgust", "fear", "happy", "sad", "surprise", "neutral")
+
+            for (rect:Rect in faceDetections) {
+                //draw rectangle
+                Imgproc.rectangle(image, Point(rect.x.toDouble(), rect.y.toDouble()), Point((rect.x + rect.width).toDouble(), (rect.y + rect.height).toDouble()), rectangleColor, rectangleThickness)
+
+                //crop the images
+                val roiGray = greyImage!!.submat(rect.y - 5, rect.y + rect.height + 5, rect.x - 5, rect.x + rect.width + 5)
+
+                //convert to bitmap
+                val bmp = Bitmap.createBitmap(
+                    roiGray.cols(),
+                    roiGray.rows(),
+                    Bitmap.Config.ARGB_8888
+                )
+
+                Utils.matToBitmap(roiGray, bmp)
+
+                //resize bmp to 48 by 48 (our model's input size)
                 val scaledBitmap = Bitmap.createScaledBitmap(bmp, 48, 48, false)
+
                 //convert bitmap to byte array*
                 val byteBuffer = ByteBuffer.allocateDirect(4*1*48*48*1)
                 byteBuffer.order(ByteOrder.nativeOrder())
@@ -248,88 +289,82 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2 {
                     }
                 }
 
-//                    bmp.copyPixelsToBuffer(byteBuffer)
-//                    val byteArray = byteBuffer.array()
-//
-////pass byte array to the TensorFlow Lite interpreter
-//                    val roiGreyUint8 = Mat()
-//                    Core.normalize(roiGray, roiGreyUint8, 0.0, 255.0, Core.NORM_MINMAX, CvType.CV_8UC1)
-//                    val input = Array(1) { ByteArray(48 * 48) }
-//                    roiGreyUint8.get(0, 0, input[0])
-//
-//
-                val output = Array(1) { FloatArray(7) }
+                val output = Array(1) {
+                    FloatArray(
+                        7
+                    )
+                }
+
+                //run the model
                 interpreter!!.run(byteBuffer, output)
+
                 val maxIndex = output[0].indices.maxBy { output[0][it] }!!
-                val emotionLabels = arrayOf("angry", "disgust", "fear", "happy", "sad", "surprise", "neutral")
                 val emotion = emotionLabels[maxIndex]
-                Imgproc.putText(mRGBA, "Mood: $emotion", Point(rect.x.toDouble(), (rect.y + rect.height + 40).toDouble()), Imgproc.FONT_HERSHEY_SIMPLEX, 1.0, Scalar(255.0, 255.0, 0.0))
+                Imgproc.putText(image, "Mood: $emotion", Point(rect.x.toDouble(), (rect.y + rect.height + 40).toDouble()), Imgproc.FONT_HERSHEY_SIMPLEX, 1.0, textColor)
 
             }
+
+
         } catch (e: Exception) {
             Log.e("ERRORRR: ", e.stackTraceToString())
         }
 
 
+        return image;
+
+    }
+
+    override fun onCameraFrame(inputFrame: CameraBridgeViewBase.CvCameraViewFrame): Mat {
+        mRGBA = inputFrame.rgba()
+
+        mGrey = inputFrame.gray()
+
+        mRGBA = recognizeFacialExpression(mRGBA!!)
+//        Core.flip(mRGBA!!.t(),mRGBA,1);
+//        Core.flip(mGrey!!.t(),mGrey,1);
+//        //detect faces and predict
+//        var faceDetections: MatOfRect = MatOfRect()
+//        faceDetector!!.detectMultiScale(mGrey, faceDetections)
+//
 //        try {
-//            for(rect:Rect in faceDetections.toArray()){
-//                Imgproc.rectangle(mRGBA, Point(rect.x.toDouble(), rect.y.toDouble()), Point((rect.x + rect.width).toDouble(), (rect.y + rect.height).toDouble()), Scalar(255.0, 255.0,0.0))
-//                // crop the face detected and resize to 48 x 48(the input of the model)
-//                var roiGrey = mGrey!!.submat(rect.y - 5, rect.y + rect.height + 5, rect.x - 5, rect.x + rect.width + 5)
-//                Imgproc.resize(roiGrey, roiGrey, Size(48.0, 48.0))
-//                //converting the image to bitmaps
-//                var imagePixels = roiGrey
+//            for (rect:Rect in faceDetections.toArray()) {
+//                Imgproc.rectangle(mRGBA, Point(rect.x.toDouble(), rect.y.toDouble()), Point((rect.x + rect.width).toDouble(), (rect.y + rect.height).toDouble()), Scalar(255.0, 0.0, 0.0), 2)
+//                val roiGray = mGrey!!.submat(rect.y - 5, rect.y + rect.height + 5, rect.x - 5, rect.x + rect.width + 5)
+////                Imgproc.resize(roiGray, roiGray, Size(48.0, 48.0))
+//                val bmp = Bitmap.createBitmap(
+//                    roiGray.cols(),
+//                    roiGray.rows(),
+//                    Bitmap.Config.ARGB_8888
+//                )
 //
-//                if(!imagePixels.empty()){
-//                    val bmp = Bitmap.createBitmap(imagePixels.cols(), imagePixels.rows(), Bitmap.Config.ARGB_8888)
-//                    Utils.matToBitmap(imagePixels, bmp)
-//
-//                    //convert bitmap to byte array
-//                    val byteBuffer = ByteBuffer.allocate(bmp.byteCount)
-//                    bmp.copyPixelsToBuffer(byteBuffer)
-////                    val byteArray = byteBuffer.array()
-////
-////                    //pass byte array to the TensorFlow Lite interpreter
-////                    val roiGreyUint8 = Mat()
-////                    Core.normalize(roiGrey, roiGreyUint8, 0.0, 255.0, Core.NORM_MINMAX, CvType.CV_8UC1)
-////                    val input = Array(1) { ByteArray(48 * 48) }
-////                    roiGreyUint8.get(0, 0, input[0])
-////
-////                    var output = Array(1) { FloatArray(7) }
-////                    interpreter?.run(input, output)
-//
-//                    //pass byte buffer to the TensorFlow Lite interpreter
-//                    val input = Array(1) { ByteArray(48 * 48) }
-//                    val roiGreyUint8 = Mat()
-//                    Core.normalize(roiGrey, roiGreyUint8, 0.0, 255.0, Core.NORM_MINMAX, CvType.CV_8UC1)
-//                    roiGreyUint8.get(0, 0, input[0])
-//                    val output = Array(1) { IntArray(7) }
-//                    interpreter?.run(input, output)
-//
-//                    //get the index of the highest prediction
-//                    val maxIndex = output[0].indices.maxBy { output[0][it] }!!
-//
-//                    // Map the index to the corresponding emotion
-//                    val emotionLabels = arrayOf("angry", "disgust", "fear", "happy", "sad", "surprise", "neutral")
-//                    val emotion = emotionLabels[maxIndex]
-//
-//                    //display the emotion prediction on the screen
-//                    Imgproc.putText(mRGBA, "Sentiment: $emotion", Point(rect.x.toDouble(), (rect.y + rect.height + 40).toDouble()), Imgproc.FONT_HERSHEY_SIMPLEX, 1.0, Scalar(255.0, 255.0, 0.0))
-////                    Toast.makeText(this@CameraActivity, "Sentiment: $emotion", Toast.LENGTH_SHORT).show()
-//
-//
-//                }else{
-//                    Log.d("EMPTY", "EMPTY")
+//                Utils.matToBitmap(roiGray, bmp)
+//                val scaledBitmap = Bitmap.createScaledBitmap(bmp, 48, 48, false)
+//                //convert bitmap to byte array*
+//                val byteBuffer = ByteBuffer.allocateDirect(4*1*48*48*1)
+//                byteBuffer.order(ByteOrder.nativeOrder())
+//                val intValue = IntArray(48*48)
+//                scaledBitmap.getPixels(intValue, 0, scaledBitmap.width, 0, 0, scaledBitmap.width,scaledBitmap.height)
+//                var pixel = 0
+//                for (i in 0 until 48) {
+//                    for (j in 0 until 48) {
+//                        val value: Int = intValue[pixel++]
+//                        byteBuffer.putFloat((value and 0xFF) / 255.0f)
+//                    }
 //                }
 //
-//            }
 //
-//        }catch(e: Exception){
-//            Log.e("ERRORRR: ", ""+ frameCount + " " + e.message.toString());
+//                val output = Array(1) { FloatArray(7) }
+//                interpreter!!.run(byteBuffer, output)
+//                val maxIndex = output[0].indices.maxBy { output[0][it] }!!
+//                val emotionLabels = arrayOf("angry", "disgust", "fear", "happy", "sad", "surprise", "neutral")
+//                val emotion = emotionLabels[maxIndex]
+//                Imgproc.putText(mRGBA, "Mood: $emotion", Point(rect.x.toDouble(), (rect.y + rect.height + 40).toDouble()), Imgproc.FONT_HERSHEY_SIMPLEX, 1.0, Scalar(255.0, 255.0, 0.0))
+//
+//            }
+//        } catch (e: Exception) {
+//            Log.e("ERRORRR: ", e.stackTraceToString())
 //        }
 
-        //var frameT = mRGBA!!.t()
-//        Core.flip(mRGBA!!.t(),mRGBA,0);
 
 
         //FPS LOGGING
@@ -340,6 +375,8 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2 {
 
         return mRGBA!!
     }
+
+
 
 //    //optimized version
 //    override fun onCameraFrame(inputFrame: CameraBridgeViewBase.CvCameraViewFrame): Mat {
