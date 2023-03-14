@@ -1,5 +1,6 @@
 package com.example.mooddetectors
 
+import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -95,10 +96,10 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2,  TextToSpeech
     private val loader = object : BaseLoaderCallback(this) {
         override fun onManagerConnected(status: Int) {
             when (status) {
-                LoaderCallbackInterface.SUCCESS -> {
+                SUCCESS -> {
                     try {
                         val IS: InputStream = resources.openRawResource(R.raw.haarcascade_frontalface_default)
-                        val cascadeDir: File = getDir("cascade", Context.MODE_PRIVATE)
+                        val cascadeDir: File = getDir("cascade", MODE_PRIVATE)
                         cascadefile = File(cascadeDir, "haarcascade_frontalface_alt_tree.xml")
                         Log.d("onManagerConnected", "Cascade file loaded successfully")
                         val fos: FileOutputStream = FileOutputStream(cascadefile)
@@ -473,10 +474,10 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2,  TextToSpeech
     private fun getPermission() {
         if (ContextCompat.checkSelfPermission(
                 this,
-                android.Manifest.permission.CAMERA
+                Manifest.permission.CAMERA
             ) != PackageManager.PERMISSION_GRANTED
         ) {
-            requestPermissions(arrayOf(android.Manifest.permission.CAMERA), 101)
+            requestPermissions(arrayOf(Manifest.permission.CAMERA), 101)
         }else{
             cameraBridgeViewBase?.setCameraPermissionGranted()
         }
