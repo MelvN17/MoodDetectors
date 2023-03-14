@@ -424,6 +424,17 @@ public abstract class CameraBridgeViewBase extends SurfaceView implements Surfac
 
         if (bmpValid && mCacheBitmap != null) {
             Canvas canvas = getHolder().lockCanvas();
+            //rotate canvas by 90 degree
+            //for portrait mode
+            float mScale1=0;
+            float mScale2=0;
+            if(canvas.getHeight()>canvas.getWidth()) {
+                canvas.rotate(90f, canvas.getWidth() / 2, canvas.getHeight() / 2);
+            }
+            else{
+
+            }
+
             if (canvas != null) {
                 canvas.drawColor(0, android.graphics.PorterDuff.Mode.CLEAR);
                 if (BuildConfig.DEBUG)
