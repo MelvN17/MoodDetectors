@@ -5,8 +5,10 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.os.Bundle
+import android.speech.tts.TextToSpeech
 import android.util.Log
 import android.view.SurfaceView
+import android.widget.ImageView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -24,9 +26,10 @@ import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.channels.FileChannel
+import java.util.*
 
 
-class CameraActivity : AppCompatActivity(), CvCameraViewListener2 {
+class CameraActivity : AppCompatActivity(), CvCameraViewListener2,  TextToSpeech.OnInitListener {
     companion object {
         const val SCREEN_WIDTH = 1920
         const val SCREEN_HEIGHT = 1080
@@ -43,6 +46,9 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2 {
     var mGrey: Mat? = null
     var height: Int? = null
     var width: Int? = null
+    var emotion: String = "No emotion"
+    var tts: TextToSpeech? = null
+    var btnEva: ImageView? = null
 
     //FPS log variables
     private var frameCount = 0
@@ -147,8 +153,11 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2 {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_camera).apply{
             cameraBridgeViewBase = findViewById(R.id.cameraView)
-        }
 
+        }
+        tts= TextToSpeech(this,this);
+
+        btnEva = findViewById(R.id.imageView2)
 
 
 
@@ -158,6 +167,10 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2 {
         if (OpenCVLoader.initDebug()) {
             initView()
             Toast.makeText(this, "Starting", Toast.LENGTH_SHORT).show()
+        }
+
+        btnEva!!.setOnClickListener{
+            tts!!.speak(emotion,TextToSpeech.QUEUE_FLUSH,null,"")
         }
 //
 //        initView()
@@ -225,7 +238,7 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2 {
 
     fun recognizeFacialExpression(image: Mat): Mat {
         //we flip the image by 90 degrees for proper alignment
-        //Core.flip(image.t(),image,1)
+        Core.flip(image.t(),image,1)
 
         //convert to grey
         var greyImage: Mat = Mat()
@@ -249,8 +262,8 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2 {
             val faceDetections = faces.toArray()
             try {
                 //optimization step, using a reusable scalar instead of creating it everytime we draw a rectangle
-                val rectangleColor = Scalar(255.0, 0.0, 0.0)
-                val textColor = Scalar(255.0, 0.0, 0.0)
+                val rectangleColor = Scalar(27.0, 171.0, 33.0)
+                val textColor = Scalar(247.0, 251.0, 55.0)
                 val rectangleThickness = 2
 
                 val emotionLabels = arrayOf("angry", "disgust", "fear", "happy", "sad", "surprise", "neutral")
@@ -302,8 +315,8 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2 {
                     interpreter!!.run(byteBuffer, output)
 
                     val maxIndex = output[0].indices.maxBy { output[0][it] }!!
-                    val emotion = emotionLabels[maxIndex]
-                    Imgproc.putText(image, "Mood: $emotion", Point(rect.x.toDouble(), (rect.y + rect.height + 40).toDouble()), Imgproc.FONT_HERSHEY_SIMPLEX, 1.0, textColor)
+                     emotion = emotionLabels[maxIndex]
+                    Imgproc.putText(image, "Mood: $emotion", Point(rect.x.toDouble(), (rect.y + rect.height + 40).toDouble()), Imgproc.FONT_HERSHEY_SIMPLEX, 2.0, textColor,2)
 
                 }
 
@@ -317,7 +330,7 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2 {
 
 
 
-
+        Core.flip(image.t(),image,0)
         return image;
 
     }
@@ -483,6 +496,18 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2 {
         }else{
 
             getPermission()
+        }
+    }
+
+    override fun onInit(status: Int) {
+        if(status== TextToSpeech.SUCCESS) {
+            val result = tts!!.setLanguage(Locale.US)
+            if(result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED ){
+                Log.e("TTS","The Langause specified is not supported")
+            }
+
+        }else{
+            Log.e("TTS","Initializing failed")
         }
     }
 }
