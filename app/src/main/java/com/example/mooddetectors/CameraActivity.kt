@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.util.Log
 import android.view.SurfaceView
@@ -49,6 +51,12 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2,  TextToSpeech
     var emotion: String = "No emotion"
     var tts: TextToSpeech? = null
     var btnEva: ImageView? = null
+
+
+    // auto run for x seconds function
+    val handler = Handler(Looper.getMainLooper())
+    val autoTriggerInSecs: Long = 5
+    var isRecognize: Boolean = false
 
     //FPS log variables
     private var frameCount = 0
@@ -170,7 +178,8 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2,  TextToSpeech
         }
 
         btnEva!!.setOnClickListener{
-            tts!!.speak(emotion,TextToSpeech.QUEUE_FLUSH,null,"")
+            isRecognize = true
+            //tts!!.speak(emotion,TextToSpeech.QUEUE_FLUSH,null,"")
         }
 //
 //        initView()
@@ -224,6 +233,9 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2,  TextToSpeech
     override fun onCameraViewStarted(width: Int, height: Int) {
         mRGBA = Mat(height, width, CvType.CV_8UC4)
         mGrey = Mat(height, width, CvType.CV_8UC1)
+
+        //TODO: if auto is true
+        startAutoRun()
 //        frame = Mat(height, width, CvType.CV_8UC4)
 //        cameraBridgeViewBase!!.enableFpsMeter()
 //        dnnHelper.onCameraViewStarted(this)
@@ -233,6 +245,9 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2,  TextToSpeech
     override fun onCameraViewStopped() {
         mRGBA?.release()
         mGrey?.release()
+
+        //TODO: fi auto is true
+        stopAutoRun()
 
     }
 
@@ -326,10 +341,13 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2,  TextToSpeech
             }
 
         }
+        else{
+            emotion = "No face detected"
+        }
 
 
 
-
+        //tts!!.speak(emotion,TextToSpeech.QUEUE_FLUSH,null,"")
         Core.flip(image.t(),image,0)
         return image;
 
@@ -341,6 +359,12 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2,  TextToSpeech
         mGrey = inputFrame.gray()
 
         mRGBA = recognizeFacialExpression(mRGBA!!)
+        //when recognize triggers once every 5 seconds or when button touched
+        if(isRecognize){
+            tts!!.speak(emotion,TextToSpeech.QUEUE_FLUSH,null,"")
+            isRecognize = false;
+        }
+
 //        Core.flip(mRGBA!!.t(),mRGBA,1);
 //        Core.flip(mGrey!!.t(),mGrey,1);
 //        //detect faces and predict
@@ -459,6 +483,24 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2,  TextToSpeech
 //        }
 //        return mCurrentFrame
 
+
+    //LOGIC for AUTO RUN
+    private val runnable = object : Runnable {
+        override fun run() {
+            //recognize face
+            isRecognize = true
+            Log.d("MyApp", "This code is executed every $autoTriggerInSecs seconds")
+            handler.postDelayed(this, (autoTriggerInSecs*1000))
+        }
+    }
+
+    private fun startAutoRun() {
+        runnable.run()
+    }
+
+    private fun stopAutoRun() {
+        handler.removeCallbacks(runnable)
+    }
 
     // logic for logging the FPS
     private fun logFPS() {
