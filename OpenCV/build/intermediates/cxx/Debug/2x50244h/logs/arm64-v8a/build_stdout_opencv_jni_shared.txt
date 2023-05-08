@@ -1,2 +1,0 @@
-ninja: Entering directory `C:\Users\melvi\StudioProjects\MoodDetectors\OpenCV\.cxx\Debug\2x50244h\arm64-v8a'
-ninja: no work to do.

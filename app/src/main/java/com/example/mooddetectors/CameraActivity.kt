@@ -10,7 +10,9 @@ import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.util.Log
 import android.view.SurfaceView
+import android.view.View
 import android.widget.ImageView
+import android.widget.Switch
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -48,9 +50,11 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2,  TextToSpeech
     var mGrey: Mat? = null
     var height: Int? = null
     var width: Int? = null
-    var emotion: String = "No emotion"
+    var emotion: String = "No face detected"
     var tts: TextToSpeech? = null
     var btnEva: ImageView? = null
+    var ttsIsOn: Boolean = true
+    var isAutoEvaluate: Boolean = true
 
 
     // auto run for x seconds function
@@ -167,7 +171,36 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2,  TextToSpeech
 
         btnEva = findViewById(R.id.imageView2)
 
+        //AUTO EVALUATE
+        val autoToggle = findViewById<Switch>(R.id.autoswitch)
+        autoToggle.setOnCheckedChangeListener { _, isChecked ->
+            run {
+                isAutoEvaluate = isChecked
+                if (isAutoEvaluate) {
+                    startAutoRun()
+                    Toast.makeText(this, "Auto Evaluate turned on", Toast.LENGTH_SHORT).show()
+                } else {
+                    stopAutoRun()
+                    Toast.makeText(this, "Auto Evaluate turned off", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
 
+        //TTS SWITCH
+        val ttsToggle = findViewById<Switch>(R.id.tts_switch)
+        val ttsIcon = findViewById<ImageView>(R.id.tts_icon)
+        ttsToggle.setOnCheckedChangeListener { _, isChecked ->
+            run {
+                ttsIsOn = isChecked
+                if (ttsIsOn) {
+                    ttsIcon.visibility = View.VISIBLE
+                    Toast.makeText(this, "TTS turned on", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "TTS turned off", Toast.LENGTH_SHORT).show()
+                    ttsIcon.visibility = View.INVISIBLE
+                }
+            }
+        }
 
         getPermission()
         cameraBridgeViewBase?.setCvCameraViewListener(this)
@@ -234,8 +267,9 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2,  TextToSpeech
         mRGBA = Mat(height, width, CvType.CV_8UC4)
         mGrey = Mat(height, width, CvType.CV_8UC1)
 
-        //TODO: if auto is true
-        startAutoRun()
+        if(isAutoEvaluate) {
+            startAutoRun()
+        }
 //        frame = Mat(height, width, CvType.CV_8UC4)
 //        cameraBridgeViewBase!!.enableFpsMeter()
 //        dnnHelper.onCameraViewStarted(this)
@@ -246,8 +280,9 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2,  TextToSpeech
         mRGBA?.release()
         mGrey?.release()
 
-        //TODO: fi auto is true
-        stopAutoRun()
+        if(isAutoEvaluate) {
+            stopAutoRun()
+        }
 
     }
 
@@ -361,7 +396,11 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2,  TextToSpeech
         mRGBA = recognizeFacialExpression(mRGBA!!)
         //when recognize triggers once every 5 seconds or when button touched
         if(isRecognize){
-            tts!!.speak(emotion,TextToSpeech.QUEUE_FLUSH,null,"")
+            if(ttsIsOn) {
+                tts!!.speak(emotion, TextToSpeech.QUEUE_FLUSH, null, "")
+            }else{
+                Toast.makeText(this@CameraActivity, emotion, Toast.LENGTH_SHORT).show()
+            }
             isRecognize = false;
         }
 
