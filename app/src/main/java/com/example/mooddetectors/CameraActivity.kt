@@ -1,12 +1,19 @@
 package com.example.mooddetectors
 
 import android.Manifest
+import android.app.Activity
+import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.media.MediaScannerConnection
+import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.provider.MediaStore
 import android.speech.tts.TextToSpeech
 import android.util.Log
 import android.view.SurfaceView
@@ -16,17 +23,16 @@ import android.widget.Switch
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.documentfile.provider.DocumentFile
 import org.opencv.android.*
 import org.opencv.android.CameraBridgeViewBase.CvCameraViewListener2
 import org.opencv.core.*
+import org.opencv.imgcodecs.Imgcodecs
 import org.opencv.imgproc.Imgproc
 import org.opencv.objdetect.CascadeClassifier
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.gpu.GpuDelegate
-import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
-import java.io.InputStream
+import java.io.*
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.channels.FileChannel
@@ -37,6 +43,7 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2,  TextToSpeech
     companion object {
         const val SCREEN_WIDTH = 1920
         const val SCREEN_HEIGHT = 1080
+        private const val REQUEST_DIRECTORY = 123
     }
     var cascadefile: File? = null
     var model: ByteBuffer? = null
@@ -55,12 +62,14 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2,  TextToSpeech
     var btnEva: ImageView? = null
     var ttsIsOn: Boolean = true
     var isAutoEvaluate: Boolean = true
+    private var selectedDir: DocumentFile? = null
 
 
     // auto run for x seconds function
     val handler = Handler(Looper.getMainLooper())
     val autoTriggerInSecs: Long = 5
     var isRecognize: Boolean = false
+    var saveImage: Boolean = false
 
     //FPS log variables
     private var frameCount = 0
@@ -103,6 +112,8 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2,  TextToSpeech
 //            }
 //        }
 //    }
+
+
 
     //With this, we do not need to close the InputStream and FileOutputStream explicitly, the resources will be closed automatically when the try block is exited. This can help to avoid resource leaks and make your code easier to read and maintain.
     private val loader = object : BaseLoaderCallback(this) {
@@ -173,6 +184,7 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2,  TextToSpeech
 
         //AUTO EVALUATE
         val autoToggle = findViewById<Switch>(R.id.autoswitch)
+        autoToggle.isChecked = true
         autoToggle.setOnCheckedChangeListener { _, isChecked ->
             run {
                 isAutoEvaluate = isChecked
@@ -188,6 +200,7 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2,  TextToSpeech
 
         //TTS SWITCH
         val ttsToggle = findViewById<Switch>(R.id.tts_switch)
+        ttsToggle.isChecked = true
         val ttsIcon = findViewById<ImageView>(R.id.tts_icon)
         ttsToggle.setOnCheckedChangeListener { _, isChecked ->
             run {
@@ -211,6 +224,7 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2,  TextToSpeech
         }
 
         btnEva!!.setOnClickListener{
+            saveImage = true
             isRecognize = true
             //tts!!.speak(emotion,TextToSpeech.QUEUE_FLUSH,null,"")
         }
@@ -290,6 +304,7 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2,  TextToSpeech
         //we flip the image by 90 degrees for proper alignment
         Core.flip(image.t(),image,1)
 
+
         //convert to grey
         var greyImage: Mat = Mat()
         Imgproc.cvtColor(image, greyImage, Imgproc.COLOR_RGBA2GRAY)
@@ -325,6 +340,10 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2,  TextToSpeech
                     //crop the images
                     val roiGray = greyImage!!.submat(rect.y  , rect.y + rect.height , rect.x , rect.x + rect.width )
 
+                    if (saveImage) {
+                        saveImage = false
+                        saveImageToGallery(applicationContext, roiGray)
+                    }
                     //convert to bitmap
                     val bmp = Bitmap.createBitmap(
                         roiGray.cols(),
@@ -388,10 +407,62 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2,  TextToSpeech
 
     }
 
+    // Function to generate a random string
+    fun generateRandomString(): String {
+        val charPool = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+        val randomString = StringBuilder()
+        val random = Random()
+
+        for (i in 0 until 8) {
+            val randomIndex = random.nextInt(charPool.length)
+            val randomChar = charPool[randomIndex]
+            randomString.append(randomChar)
+        }
+
+        return randomString.toString()
+    }
+
+    private fun saveImageToGallery(context: Context,image: Mat) {
+        val imageFileName = "my_image.jpg"
+
+        // Create the directory path
+        val storageDir = context.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
+        val imagePath = File(storageDir, imageFileName)
+
+        try {
+            // Save the image to the specified path
+            Imgcodecs.imwrite(imagePath.absolutePath, image)
+
+            // Insert the image to MediaStore to make it accessible from the gallery
+            val contentValues = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, imageFileName)
+                put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                put(MediaStore.Images.Media.DATE_ADDED, System.currentTimeMillis() / 1000)
+                put(MediaStore.Images.Media.DATA, imagePath.absolutePath)
+            }
+            context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+
+            Log.d("SaveImageToGallery", "Image saved successfully.")
+        } catch (e: IOException) {
+            Log.e("SaveImageToGallery", "Error saving image: ${e.message}")
+        }
+
+    }
+
     override fun onCameraFrame(inputFrame: CameraBridgeViewBase.CvCameraViewFrame): Mat {
         mRGBA = inputFrame.rgba()
 
         mGrey = inputFrame.gray()
+
+
+
+
+
+
+
+
+
+
 
         mRGBA = recognizeFacialExpression(mRGBA!!)
         //when recognize triggers once every 5 seconds or when button touched
@@ -399,7 +470,7 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2,  TextToSpeech
             if(ttsIsOn) {
                 tts!!.speak(emotion, TextToSpeech.QUEUE_FLUSH, null, "")
             }else{
-                Toast.makeText(this@CameraActivity, emotion, Toast.LENGTH_SHORT).show()
+                //Toast.makeText(this@CameraActivity, emotion, Toast.LENGTH_SHORT).show()
             }
             isRecognize = false;
         }
