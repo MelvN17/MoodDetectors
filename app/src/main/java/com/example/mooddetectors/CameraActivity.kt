@@ -340,10 +340,10 @@ class CameraActivity : AppCompatActivity(), CvCameraViewListener2,  TextToSpeech
                     //crop the images
                     val roiGray = greyImage!!.submat(rect.y  , rect.y + rect.height , rect.x , rect.x + rect.width )
 
-                    if (saveImage) {
-                        saveImage = false
-                        saveImageToGallery(applicationContext, roiGray)
-                    }
+//                    if (saveImage) {
+//                        saveImage = false
+//                        saveImageToGallery(applicationContext, roiGray)
+//                    }
                     //convert to bitmap
                     val bmp = Bitmap.createBitmap(
                         roiGray.cols(),
